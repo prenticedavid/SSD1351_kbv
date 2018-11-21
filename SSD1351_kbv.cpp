@@ -42,11 +42,12 @@
 #define SID_LOW   *sidport &= ~sidpinmask
 #define SCLK_HI   *sclkport |= sclkpinmask
 #define SCLK_LOW  *sclkport &= ~sclkpinmask
-#define DC_HI     *rsport |= rspinmask
-#define DC_LOW    *rsport &= ~rspinmask
-#define CS_HI     *csport |= cspinmask
-#define CS_LOW    *csport &= ~cspinmask
+#define CD_DATA   *rsport |= rspinmask
+#define CD_COMMAND *rsport &= ~rspinmask
+#define CS_IDLE   *csport |= cspinmask
+#define CS_ACTIVE *csport &= ~cspinmask
 
+SPISettings oledSetting(24000000, MSBFIRST, SPI_MODE0);  //ESP8266 does not like MODE3
 
 /********************************** low level pin interface */
 
@@ -74,18 +75,18 @@ inline void SSD1351_kbv::spiwrite(uint8_t c)
 
 void SSD1351_kbv::writeCommand(uint8_t c)
 {
-    DC_LOW;
-    CS_LOW;
+    CD_COMMAND;
+    CS_ACTIVE;
     spiwrite(c);
-    CS_HI;
+    CS_IDLE;
 }
 
 void SSD1351_kbv::writeData(uint8_t c) 
 {
-    DC_HI;
-    CS_LOW;
+    CD_DATA;
+    CS_ACTIVE;
     spiwrite(c);
-    CS_HI;
+    CS_IDLE;
 }
 
 /***********************************/
@@ -140,20 +141,21 @@ void SSD1351_kbv::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t 
     }
 
     // set location
-    writeCommand(_MC);
-    writeData(x);
-    writeData(x + w - 1);
-    writeCommand(_MP);
-    writeData(y);
-    writeData(y + h - 1);
+    setAddrWindow(x, y, x + w - 1, y + h - 1);
 
     // fill!
     writeCommand(SSD1351_CMD_WRITERAM);
 
-    for (uint16_t i = 0; i < w * h; i++) {
-        writeData(fillcolor >> 8);
-        writeData(fillcolor);
+    uint16_t i = w * h;
+    uint8_t hi = fillcolor >> 8;
+    uint8_t lo = fillcolor;
+    CD_DATA;
+	CS_ACTIVE;
+	while (i--) {
+        spiwrite(hi);
+        spiwrite(lo);
     }
+	CS_IDLE;
 }
 
 void SSD1351_kbv::drawPixel(int16_t x, int16_t y, uint16_t color)
@@ -161,18 +163,30 @@ void SSD1351_kbv::drawPixel(int16_t x, int16_t y, uint16_t color)
     // Bounds check.
     if ((x >= _width) || (y >= _height)) return;
     if ((x < 0) || (y < 0)) return;
-
+#if 0
     setAddrWindow(x, y, x, y);
-    writeCommand(SSD1351_CMD_WRITERAM);
-
-    // setup for data
-    *rsport |= rspinmask;
-    *csport &= ~ cspinmask;
-
+    CD_COMMAND;
+    CS_ACTIVE;
+#else
+    CD_COMMAND;
+    CS_ACTIVE;
+    spiwrite(_MC);
+    CD_DATA;
+    spiwrite(x);
+    spiwrite(x);
+    CD_COMMAND;
+    spiwrite(_MP);
+    CD_DATA;
+    spiwrite(y);
+    spiwrite(y);
+    CD_COMMAND;
+#endif
+    spiwrite(SSD1351_CMD_WRITERAM);
+    CD_DATA;
     spiwrite(color >> 8);
     spiwrite(color);
 
-    *csport |= cspinmask;
+    CS_IDLE;;
 }
 
 void SSD1351_kbv::begin(uint16_t ID) 
@@ -187,7 +201,7 @@ void SSD1351_kbv::begin(uint16_t ID)
     } else {
         // using the hardware SPI
         SPI.begin();
-        SPI.setDataMode(SPI_MODE3);
+        SPI.beginTransaction(oledSetting);
     }
 
     // Toggle RST low to reset; CS low so it'll listen to us
@@ -278,7 +292,8 @@ void SSD1351_kbv::begin(uint16_t ID)
     setRotation(0);
 }
 
-void  SSD1351_kbv::invertDisplay(boolean v) {
+void  SSD1351_kbv::invertDisplay(boolean v)
+{
     if (v) {
         writeCommand(SSD1351_CMD_INVERTDISPLAY);
     } else {
@@ -286,13 +301,28 @@ void  SSD1351_kbv::invertDisplay(boolean v) {
     }
 }
 
-void     SSD1351_kbv::setAddrWindow(int16_t x, int16_t y, int16_t x1, int16_t y1) {
+void     SSD1351_kbv::setAddrWindow(int16_t x, int16_t y, int16_t x1, int16_t y1)
+{
+    CD_COMMAND;
+    CS_ACTIVE;
+    spiwrite(_MC);
+    CD_DATA;
+    spiwrite(x);
+    spiwrite(x1);
+    CD_COMMAND;
+    spiwrite(_MP);
+    CD_DATA;
+    spiwrite(y);
+    spiwrite(y1);
+    CS_IDLE;
+/*
     writeCommand(_MC);
     writeData(x);
     writeData(x1);
     writeCommand(_MP);
     writeData(y);
     writeData(y1);
+*/
 }
 
 void SSD1351_kbv::pushColors_any(uint16_t cmd, uint8_t * block, int16_t n, bool first, uint8_t flags)
