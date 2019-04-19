@@ -24,7 +24,6 @@
 
 #include "Adafruit_GFX.h"
 #include "SSD1351_kbv.h"
-#include "glcdfont.c"
 #ifdef __AVR
 #include <avr/pgmspace.h>
 #elif defined(ESP8266)
@@ -47,7 +46,7 @@
 #define CS_IDLE   *csport |= cspinmask
 #define CS_ACTIVE *csport &= ~cspinmask
 
-SPISettings oledSetting(24000000, MSBFIRST, SPI_MODE0);  //ESP8266 does not like MODE3
+SPISettings oledSetting(8000000, MSBFIRST, SPI_MODE0);  //ESP8266 does not like MODE3
 
 /********************************** low level pin interface */
 
@@ -208,7 +207,7 @@ void SSD1351_kbv::begin(uint16_t ID)
     pinMode(_cs, OUTPUT);
     digitalWrite(_cs, LOW);
 
-    if (_rst) {
+    if (_rst || 1) {   //ESP8266 D8 pin is GPIO0
         pinMode(_rst, OUTPUT);
         digitalWrite(_rst, HIGH);
         delay(500);
@@ -303,6 +302,7 @@ void  SSD1351_kbv::invertDisplay(boolean v)
 
 void     SSD1351_kbv::setAddrWindow(int16_t x, int16_t y, int16_t x1, int16_t y1)
 {
+#if 0
     CD_COMMAND;
     CS_ACTIVE;
     spiwrite(_MC);
@@ -315,14 +315,14 @@ void     SSD1351_kbv::setAddrWindow(int16_t x, int16_t y, int16_t x1, int16_t y1
     spiwrite(y);
     spiwrite(y1);
     CS_IDLE;
-/*
+#else
     writeCommand(_MC);
     writeData(x);
     writeData(x1);
     writeCommand(_MP);
     writeData(y);
     writeData(y1);
-*/
+#endif
 }
 
 void SSD1351_kbv::pushColors_any(uint16_t cmd, uint8_t * block, int16_t n, bool first, uint8_t flags)
